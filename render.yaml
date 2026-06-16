@@ -1,5 +1,5 @@
 services:
-  # ── Backend API ─────────────────────────────
+  # ── Backend API + Frontend Dashboard ────────
   - type: web
     name: job-agent-api
     runtime: python
@@ -8,18 +8,7 @@ services:
     startCommand: python main.py
     envVars:
       - key: GROQ_API_KEY
-        sync: false   # you will paste this manually in Render dashboard
+        sync: false
       - key: PORT
         value: 8000
     healthCheckPath: /stats
-
-  # ── Scheduler (background worker) ───────────
-  - type: worker
-    name: job-agent-scheduler
-    runtime: python
-    rootDir: backend
-    buildCommand: pip install -r ../requirements.txt
-    startCommand: python scheduler.py
-    envVars:
-      - key: GROQ_API_KEY
-        sync: false
