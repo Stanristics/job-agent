@@ -216,3 +216,71 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
+
+# ── Send application email ─────────────────────────────────────────────────────
+class EmailRequest(BaseModel):
+    to_email: str
+    job_id: int
+
+@app.post("/jobs/{job_id}/send-email")
+def send_email(job_id: int, req: EmailRequest):
+    conn = get_conn()
+    row = conn.execute('SELECT * FROM jobs WHERE id = ?', (job_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job      = row_to_dict(row)
+    settings = get_settings()
+    cv_path  = settings.get('cv_path', '')
+
+    from ai_agent import send_application_email
+    result = send_application_email(req.to_email, job, job['cover_letter'], cv_path, settings)
+
+    if result['success']:
+        # Mark as submitted
+        conn = get_conn()
+        conn.execute(
+            "UPDATE jobs SET status='submitted', submitted_at=datetime('now') WHERE id=?",
+            (job_id,)
+        )
+        conn.commit()
+        conn.close()
+
+    return result
+
+
+# ── Platform detection (for dashboard badge) ────────────────────────────────────
+@app.get("/jobs/{job_id}/detect-platform")
+def detect_platform(job_id: int):
+    """Detect which application system (LinkedIn/Greenhouse/Workday/Lever/email) this job uses."""
+    conn = get_conn()
+    row = conn.execute('SELECT url FROM jobs WHERE id = ?', (job_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    url_lower = row['url'].lower()
+    if 'linkedin.com' in url_lower:
+        platform = 'linkedin'
+    elif 'greenhouse.io' in url_lower:
+        platform = 'greenhouse'
+    elif 'myworkdayjobs.com' in url_lower or 'workday.com' in url_lower:
+        platform = 'workday'
+    elif 'lever.co' in url_lower:
+        platform = 'lever'
+    elif 'indeed.com' in url_lower:
+        platform = 'indeed'
+    else:
+        platform = 'unknown'
+
+    # Form-based platforms need the local form filler; others use email
+    needs_form_filler = platform in ('linkedin', 'greenhouse', 'workday', 'lever')
+
+    return {"platform": platform, "needs_form_filler": needs_form_filler}
+
+# NOTE: Actual form-filling does NOT run here on Render.
+# Render has no display, so there's nothing for Stanley to review before submitting.
+# Form-filling runs locally via local_form_filler.py on Stanley's Mac instead —
+# that script pulls approved jobs from this API and opens a real visible browser.
