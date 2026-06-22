@@ -136,6 +136,19 @@ function Toast({ msg, type, onClose }) {
   return <div className={`toast ${type}`}><i className={`fa ${type==='success'?'fa-check-circle':'fa-exclamation-circle'}`}/>{msg}</div>;
 }
 
+function ApplicationTypeBadge({ url }) {
+  const u = (url || '').toLowerCase();
+  let type = 'email', icon = 'fa-envelope', color = 'var(--purple)';
+  if (u.includes('linkedin.com'))      { type = 'LinkedIn Form'; icon = 'fa-window-restore'; color = 'var(--blue)'; }
+  else if (u.includes('greenhouse.io')){ type = 'Greenhouse Form'; icon = 'fa-window-restore'; color = 'var(--blue)'; }
+  else if (u.includes('workday') )     { type = 'Workday Form'; icon = 'fa-window-restore'; color = 'var(--blue)'; }
+  else if (u.includes('lever.co'))     { type = 'Lever Form'; icon = 'fa-window-restore'; color = 'var(--blue)'; }
+  else if (u.includes('indeed.com'))   { type = 'Indeed (manual)'; icon = 'fa-hand-pointer'; color = 'var(--yellow)'; }
+  else                                  { type = 'Email apply'; icon = 'fa-envelope'; color = 'var(--purple)'; }
+
+  return <span className="badge" style={{background:`${color}22`,color}}><i className={`fa ${icon}`}/> {type}</span>;
+}
+
 function ScoreCircle({ score }) {
   const cls = score >= 75 ? 'score-high' : score >= 50 ? 'score-mid' : 'score-low';
   return <div className={`score-circle ${cls}`}>{score}</div>;
@@ -264,6 +277,7 @@ function JobDetail({ job, onUpdate, onClose, toast }) {
           <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
             <StatusBadge status={job.status}/>
             <span className="badge badge-source"><i className="fa fa-link"/>{job.source}</span>
+            <ApplicationTypeBadge url={job.url}/>
             {job.salary && <span className="badge" style={{background:'#a78bfa22',color:'var(--purple)'}}>{job.salary}</span>}
           </div>
         </div>
@@ -314,11 +328,32 @@ function JobDetail({ job, onUpdate, onClose, toast }) {
             <i className="fa fa-check"/>Approve
           </button>
         )}
-        {job.status === 'approved' && (
-          <button className="btn btn-purple" onClick={()=>setShowEmail(true)}>
-            <i className="fa fa-envelope"/>Send Email Application
-          </button>
-        )}
+        {job.status === 'approved' && (() => {
+          const u = (job.url||'').toLowerCase();
+          const isForm = u.includes('linkedin.com') || u.includes('greenhouse.io') || u.includes('workday') || u.includes('lever.co');
+          const isIndeed = u.includes('indeed.com');
+          if (isForm) {
+            return (
+              <div style={{fontSize:13,color:'var(--blue)',display:'flex',alignItems:'center',gap:8,background:'var(--surface2)',padding:'10px 14px',borderRadius:8}}>
+                <i className="fa fa-laptop-code"/>
+                This job needs a form. Run <code style={{background:'var(--surface3)',padding:'2px 6px',borderRadius:4}}>local_form_filler.py</code> on your Mac to auto-fill it.
+              </div>
+            );
+          }
+          if (isIndeed) {
+            return (
+              <div style={{fontSize:13,color:'var(--yellow)',display:'flex',alignItems:'center',gap:8,background:'var(--surface2)',padding:'10px 14px',borderRadius:8}}>
+                <i className="fa fa-hand-pointer"/>
+                Indeed applications vary — please apply manually using the cover letter above.
+              </div>
+            );
+          }
+          return (
+            <button className="btn btn-purple" onClick={()=>setShowEmail(true)}>
+              <i className="fa fa-envelope"/>Send Email Application
+            </button>
+          );
+        })()}
         {job.status === 'submitted' && (
           <span style={{fontSize:13,color:'var(--purple)',display:'flex',alignItems:'center',gap:6}}>
             <i className="fa fa-check-circle"/>Application submitted
@@ -440,6 +475,7 @@ function JobsPage({ toast }) {
                 <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                   <StatusBadge status={job.status}/>
                   <span className="badge badge-source">{job.source}</span>
+                  <ApplicationTypeBadge url={job.url}/>
                 </div>
               </div>
               <div className="job-actions" onClick={e=>e.stopPropagation()}>
