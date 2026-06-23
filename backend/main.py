@@ -182,9 +182,10 @@ async def run_search():
     search_running = True
     try:
         settings = get_settings()
-        titles   = [t.strip() for t in settings.get('job_titles', 'Data Scientist').split(',')]
-        logger.info(f"Starting search for: {titles} across Germany")
-        jobs = await asyncio.to_thread(run_all_scrapers, titles, 'Germany')
+        titles    = [t.strip() for t in settings.get('job_titles', 'Data Scientist').split(',')]
+        countries = [c.strip() for c in settings.get('countries', 'germany').split(',') if c.strip()]
+        logger.info(f"Starting search for: {titles} across countries: {countries}")
+        jobs = await asyncio.to_thread(run_all_scrapers, titles, countries)
         conn = get_conn()
         new_count = 0
         for job in jobs:
