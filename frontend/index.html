@@ -139,7 +139,7 @@ function Toast({ msg, type, onClose }) {
 function ApplicationTypeBadge({ url }) {
   const u = (url || '').toLowerCase();
   let type = 'email', icon = 'fa-envelope', color = 'var(--purple)';
-  if (u.includes('linkedin.com'))      { type = 'LinkedIn Form'; icon = 'fa-window-restore'; color = 'var(--blue)'; }
+  if (u.includes('linkedin.com'))      { type = 'LinkedIn (may redirect)'; icon = 'fa-window-restore'; color = 'var(--blue)'; }
   else if (u.includes('greenhouse.io')){ type = 'Greenhouse Form'; icon = 'fa-window-restore'; color = 'var(--blue)'; }
   else if (u.includes('workday') )     { type = 'Workday Form'; icon = 'fa-window-restore'; color = 'var(--blue)'; }
   else if (u.includes('lever.co'))     { type = 'Lever Form'; icon = 'fa-window-restore'; color = 'var(--blue)'; }
@@ -539,6 +539,35 @@ function StatsPage() {
         <div style={{fontSize:32,fontWeight:700,color:'var(--yellow)'}}>
           {stats.avg_score||0}<span style={{fontSize:16,color:'var(--muted)'}}>/100</span>
         </div>
+      </div>
+
+      <div className="stat-card" style={{marginTop:12}}>
+        <div style={{color:'var(--muted)',fontSize:13,marginBottom:14}}>Applications by Type</div>
+        {(() => {
+          const t = stats.application_types || {};
+          const rows = [
+            {label:'LinkedIn (Easy Apply / Apply)', value:t.linkedin_easy_apply||0, icon:'fa-window-restore', color:'var(--blue)', note:'run local_form_filler.py'},
+            {label:'Greenhouse',                    value:t.greenhouse||0,          icon:'fa-window-restore', color:'var(--blue)', note:'run local_form_filler.py'},
+            {label:'Workday',                       value:t.workday||0,             icon:'fa-window-restore', color:'var(--blue)', note:'run local_form_filler.py'},
+            {label:'Lever',                         value:t.lever||0,               icon:'fa-window-restore', color:'var(--blue)', note:'run local_form_filler.py'},
+            {label:'Email apply',                   value:t.email||0,               icon:'fa-envelope',       color:'var(--purple)', note:'Send Email Application button'},
+            {label:'Indeed (manual)',                value:t.indeed_manual||0,       icon:'fa-hand-pointer',   color:'var(--yellow)', note:'apply manually'},
+          ];
+          return (
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              {rows.map((r,i)=>(
+                <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:i<rows.length-1?'1px solid var(--border)':'none'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <i className={`fa ${r.icon}`} style={{color:r.color,width:16}}/>
+                    <span style={{fontSize:13}}>{r.label}</span>
+                    <span style={{fontSize:11,color:'var(--muted)'}}>— {r.note}</span>
+                  </div>
+                  <span style={{fontSize:16,fontWeight:700,color:r.color}}>{r.value}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
