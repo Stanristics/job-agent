@@ -1,8 +1,14 @@
 """
 Job scrapers for Indeed, StepStone, LinkedIn, and Xing.
-- Searches all of Germany
+- Searches across user-selected countries: Germany, Austria, Switzerland, Norway, Australia
 - Filters to jobs posted in the last 24 hours only
 - Skips jobs already in the database (handled by main.py via URL dedup)
+
+NOTE ON COUNTRY COVERAGE PER PLATFORM:
+- Indeed:    has localized domains for all 5 countries (de/at/ch/no/au)
+- LinkedIn:  global, works for all 5 countries via location parameter
+- StepStone: DACH-region only (Germany, Austria, Switzerland) — no Norway/Australia presence
+- Xing:      DACH-region only (Germany, Austria, Switzerland) — no Norway/Australia presence
 """
 
 import requests
@@ -33,6 +39,17 @@ HEADERS = {
     'Cache-Control': 'max-age=0',
 }
 
+# ── Country configuration ───────────────────────────────────────────────────────
+# Maps a country code to its Indeed domain, LinkedIn location string,
+# and whether StepStone/Xing support it (DACH region only)
+COUNTRY_CONFIG = {
+    'germany':     {'indeed_domain': 'de.indeed.com',  'indeed_loc': 'Deutschland', 'linkedin_loc': 'Germany',     'dach': True,  'label': 'Germany'},
+    'austria':     {'indeed_domain': 'at.indeed.com',  'indeed_loc': 'Österreich',  'linkedin_loc': 'Austria',     'dach': True,  'label': 'Austria'},
+    'switzerland': {'indeed_domain': 'ch.indeed.com',  'indeed_loc': 'Schweiz',     'linkedin_loc': 'Switzerland', 'dach': True,  'label': 'Switzerland'},
+    'norway':      {'indeed_domain': 'no.indeed.com',  'indeed_loc': 'Norge',       'linkedin_loc': 'Norway',      'dach': False, 'label': 'Norway'},
+    'australia':   {'indeed_domain': 'au.indeed.com',  'indeed_loc': 'Australia',   'linkedin_loc': 'Australia',   'dach': False, 'label': 'Australia'},
+}
+
 def _get(url, params=None, max_retries=2, timeout=30):
     """
     Fetch a URL with retry logic. Cloud server IPs (like Render's) are often
@@ -48,21 +65,18 @@ def _get(url, params=None, max_retries=2, timeout=30):
         except Exception as e:
             last_error = e
             if attempt < max_retries:
-                wait = random.uniform(2, 5) * (attempt + 1)  # increasing backoff
+                wait = random.uniform(2, 5) * (attempt + 1)
                 logger.info(f"Retry {attempt + 1}/{max_retries} for {url} after {wait:.1f}s — {e}")
                 time.sleep(wait)
             continue
     logger.warning(f"Request failed after {max_retries + 1} attempts: {url} — {last_error}")
     return None
 
+
 def is_recent(date_str: str) -> bool:
-    """
-    Returns True if the date string suggests the job was posted
-    within the last 24 hours. Handles common formats like:
-    'Today', 'Just posted', 'Heute', '1 day ago', '23 hours ago', etc.
-    """
+    """Returns True if the date string suggests the job was posted within the last 24 hours."""
     if not date_str:
-        return True  # if no date, include it to be safe
+        return True
     s = date_str.lower().strip()
     recent_keywords = [
         'today', 'just posted', 'just now', 'heute', 'gerade',
@@ -72,7 +86,6 @@ def is_recent(date_str: str) -> bool:
     for kw in recent_keywords:
         if kw in s:
             return True
-    # Filter out anything clearly older
     old_keywords = [
         '2 day', '3 day', '4 day', '5 day', '6 day', '7 day',
         'week', 'month', 'vor 2', 'vor 3', 'vor 4', 'vor 5',
@@ -81,20 +94,24 @@ def is_recent(date_str: str) -> bool:
     for kw in old_keywords:
         if kw in s:
             return False
-    return True  # default include if unclear
+    return True
 
 
-# ─── Indeed ───────────────────────────────────────────────────────────────────
-def scrape_indeed(titles: list, location: str = 'Deutschland') -> list:
+# ─── Indeed (works across all 5 countries via localized domains) ──────────────
+def scrape_indeed(titles: list, country: str = 'germany') -> list:
+    cfg = COUNTRY_CONFIG.get(country)
+    if not cfg:
+        return []
+
     jobs = []
     for title in titles:
-        url = 'https://de.indeed.com/jobs'
+        url = f"https://{cfg['indeed_domain']}/jobs"
         params = {
             'q': title,
-            'l': location,
+            'l': cfg['indeed_loc'],
             'radius': '100',
-            'fromage': '1',   # posted in last 1 day
-            'sort': 'date',   # newest first
+            'fromage': '1',
+            'sort': 'date',
         }
         r = _get(url, params)
         if not r:
@@ -114,12 +131,13 @@ def scrape_indeed(titles: list, location: str = 'Deutschland') -> list:
                 date_text = date.get_text(strip=True) if date else ''
                 if not is_recent(date_text):
                     continue
-                job_url = 'https://de.indeed.com' + link.get('href', '')
+                job_url = f"https://{cfg['indeed_domain']}" + link.get('href', '')
                 jobs.append({
                     'title':       t.get_text(strip=True),
                     'company':     co.get_text(strip=True),
-                    'location':    loc.get_text(strip=True) if loc else 'Germany',
+                    'location':    loc.get_text(strip=True) if loc else cfg['label'],
                     'source':      'Indeed',
+                    'country':     cfg['label'],
                     'url':         job_url,
                     'description': '',
                     'salary':      sal.get_text(strip=True) if sal else '',
@@ -128,21 +146,24 @@ def scrape_indeed(titles: list, location: str = 'Deutschland') -> list:
             except Exception as e:
                 logger.debug(f"Indeed card parse error: {e}")
         time.sleep(random.uniform(1.5, 3))
-    logger.info(f"Indeed: found {len(jobs)} jobs from last 24h")
+    logger.info(f"Indeed ({cfg['label']}): found {len(jobs)} jobs from last 24h")
     return jobs
 
 
-# ─── StepStone ────────────────────────────────────────────────────────────────
-def scrape_stepstone(titles: list, location: str = 'Deutschland') -> list:
+# ─── StepStone (DACH region only: Germany, Austria, Switzerland) ──────────────
+def scrape_stepstone(titles: list, country: str = 'germany') -> list:
+    cfg = COUNTRY_CONFIG.get(country)
+    if not cfg or not cfg['dach']:
+        return []  # StepStone doesn't operate in Norway/Australia
+
+    # StepStone uses one .de domain but a 'where' country filter
+    where_map = {'germany': 'Deutschland', 'austria': 'Österreich', 'switzerland': 'Schweiz'}
+    where = where_map.get(country, 'Deutschland')
+
     jobs = []
     for title in titles:
         url = f'https://www.stepstone.de/jobs/{title.replace(" ", "-")}.html'
-        params = {
-            'where': 'Deutschland',
-            'radius': '30',
-            'ag': 'age_1',    # last 24 hours filter
-            'sort': 'date',
-        }
+        params = {'where': where, 'radius': '30', 'ag': 'age_1', 'sort': 'date'}
         r = _get(url, params)
         if not r:
             continue
@@ -166,8 +187,9 @@ def scrape_stepstone(titles: list, location: str = 'Deutschland') -> list:
                 jobs.append({
                     'title':       t.get_text(strip=True),
                     'company':     co.get_text(strip=True) if co else '',
-                    'location':    loc.get_text(strip=True) if loc else 'Germany',
+                    'location':    loc.get_text(strip=True) if loc else cfg['label'],
                     'source':      'StepStone',
+                    'country':     cfg['label'],
                     'url':         job_url,
                     'description': '',
                     'salary':      sal.get_text(strip=True) if sal else '',
@@ -176,21 +198,25 @@ def scrape_stepstone(titles: list, location: str = 'Deutschland') -> list:
             except Exception as e:
                 logger.debug(f"StepStone card parse error: {e}")
         time.sleep(random.uniform(1.5, 3))
-    logger.info(f"StepStone: found {len(jobs)} jobs from last 24h")
+    logger.info(f"StepStone ({cfg['label']}): found {len(jobs)} jobs from last 24h")
     return jobs
 
 
-# ─── LinkedIn ─────────────────────────────────────────────────────────────────
-def scrape_linkedin(titles: list, location: str = 'Germany') -> list:
+# ─── LinkedIn (works across all 5 countries) ──────────────────────────────────
+def scrape_linkedin(titles: list, country: str = 'germany') -> list:
+    cfg = COUNTRY_CONFIG.get(country)
+    if not cfg:
+        return []
+
     jobs = []
     for title in titles:
         url = 'https://www.linkedin.com/jobs/search/'
         params = {
             'keywords': title,
-            'location': 'Germany',
-            'f_TPR':    'r86400',  # last 24 hours (86400 seconds)
-            'f_WT':     '2',       # include remote
-            'sortBy':   'DD',      # sort by date
+            'location': cfg['linkedin_loc'],
+            'f_TPR':    'r86400',
+            'f_WT':     '2',
+            'sortBy':   'DD',
         }
         r = _get(url, params)
         if not r:
@@ -207,7 +233,6 @@ def scrape_linkedin(titles: list, location: str = 'Germany') -> list:
                 if not (t and link):
                     continue
                 date_text = date.get('datetime', '') if date else ''
-                # LinkedIn datetime is ISO format e.g. "2024-06-15"
                 if date_text:
                     try:
                         posted = datetime.strptime(date_text[:10], '%Y-%m-%d')
@@ -218,8 +243,9 @@ def scrape_linkedin(titles: list, location: str = 'Germany') -> list:
                 jobs.append({
                     'title':       t.get_text(strip=True),
                     'company':     co.get_text(strip=True) if co else '',
-                    'location':    loc.get_text(strip=True) if loc else 'Germany',
+                    'location':    loc.get_text(strip=True) if loc else cfg['label'],
                     'source':      'LinkedIn',
+                    'country':     cfg['label'],
                     'url':         link.get('href', ''),
                     'description': '',
                     'salary':      '',
@@ -228,22 +254,23 @@ def scrape_linkedin(titles: list, location: str = 'Germany') -> list:
             except Exception as e:
                 logger.debug(f"LinkedIn card parse error: {e}")
         time.sleep(random.uniform(2, 4))
-    logger.info(f"LinkedIn: found {len(jobs)} jobs from last 24h")
+    logger.info(f"LinkedIn ({cfg['label']}): found {len(jobs)} jobs from last 24h")
     return jobs
 
 
-# ─── Xing ─────────────────────────────────────────────────────────────────────
-def scrape_xing(titles: list, location: str = 'Deutschland') -> list:
+# ─── Xing (DACH region only: Germany, Austria, Switzerland) ──────────────────
+def scrape_xing(titles: list, country: str = 'germany') -> list:
+    cfg = COUNTRY_CONFIG.get(country)
+    if not cfg or not cfg['dach']:
+        return []  # Xing doesn't operate in Norway/Australia
+
+    where_map = {'germany': 'Deutschland', 'austria': 'Österreich', 'switzerland': 'Schweiz'}
+    where = where_map.get(country, 'Deutschland')
+
     jobs = []
     for title in titles:
         url = 'https://www.xing.com/jobs/search'
-        params = {
-            'keywords': title,
-            'location': 'Deutschland',
-            'radius':   '50',
-            'published_at': 'last_day',  # last 24 hours
-            'sort':     'date',
-        }
+        params = {'keywords': title, 'location': where, 'radius': '50', 'published_at': 'last_day', 'sort': 'date'}
         r = _get(url, params)
         if not r:
             continue
@@ -266,8 +293,9 @@ def scrape_xing(titles: list, location: str = 'Deutschland') -> list:
                 jobs.append({
                     'title':       t.get_text(strip=True),
                     'company':     co.get_text(strip=True) if co else '',
-                    'location':    loc.get_text(strip=True) if loc else 'Germany',
+                    'location':    loc.get_text(strip=True) if loc else cfg['label'],
                     'source':      'Xing',
+                    'country':     cfg['label'],
                     'url':         job_url,
                     'description': '',
                     'salary':      '',
@@ -276,7 +304,7 @@ def scrape_xing(titles: list, location: str = 'Deutschland') -> list:
             except Exception as e:
                 logger.debug(f"Xing card parse error: {e}")
         time.sleep(random.uniform(1.5, 3))
-    logger.info(f"Xing: found {len(jobs)} jobs from last 24h")
+    logger.info(f"Xing ({cfg['label']}): found {len(jobs)} jobs from last 24h")
     return jobs
 
 
@@ -300,14 +328,27 @@ def fetch_description(url: str, source: str) -> str:
     return main.get_text(separator='\n', strip=True)[:3000] if main else ''
 
 
-# ─── Run all scrapers ─────────────────────────────────────────────────────────
-def run_all_scrapers(titles: list, location: str = 'Germany') -> list:
-    logger.info(f"🔍 Scraping last 24h jobs for: {titles}")
+# ─── Run all scrapers across selected countries ───────────────────────────────
+def run_all_scrapers(titles: list, countries: list = None) -> list:
+    """
+    countries: list of country keys, e.g. ['germany', 'austria', 'switzerland', 'norway', 'australia']
+    Defaults to ['germany'] if not specified.
+    """
+    if not countries:
+        countries = ['germany']
+
+    logger.info(f"🔍 Scraping last 24h jobs for: {titles} across countries: {countries}")
     all_jobs = []
-    all_jobs += scrape_indeed(titles, 'Deutschland')
-    all_jobs += scrape_stepstone(titles, 'Deutschland')
-    all_jobs += scrape_linkedin(titles, 'Germany')
-    all_jobs += scrape_xing(titles, 'Deutschland')
+
+    for country in countries:
+        if country not in COUNTRY_CONFIG:
+            logger.warning(f"Unknown country key: {country} — skipping")
+            continue
+
+        all_jobs += scrape_indeed(titles, country)
+        all_jobs += scrape_stepstone(titles, country)   # auto-skips if not DACH
+        all_jobs += scrape_linkedin(titles, country)
+        all_jobs += scrape_xing(titles, country)          # auto-skips if not DACH
 
     # Deduplicate by URL
     seen, unique = set(), []
@@ -316,5 +357,5 @@ def run_all_scrapers(titles: list, location: str = 'Germany') -> list:
             seen.add(job['url'])
             unique.append(job)
 
-    logger.info(f"✅ Total unique jobs from last 24h: {len(unique)}")
+    logger.info(f"✅ Total unique jobs across all selected countries: {len(unique)}")
     return unique
