@@ -43,6 +43,7 @@ def init_db():
     # Default settings
     defaults = {
         'job_titles':  'Data Scientist,Data Analyst,ML Engineer',
+        'countries':   'germany',
         'location':    'Munich',
         'min_score':   '60',
         'cv_path':     '',
