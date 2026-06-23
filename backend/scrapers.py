@@ -20,17 +20,40 @@ HEADERS = {
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
         'AppleWebKit/537.36 (KHTML, like Gecko) '
         'Chrome/120.0.0.0 Safari/537.36'
-    )
+    ),
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Cache-Control': 'max-age=0',
 }
 
-def _get(url, params=None):
-    try:
-        r = requests.get(url, headers=HEADERS, params=params, timeout=15)
-        r.raise_for_status()
-        return r
-    except Exception as e:
-        logger.warning(f"Request failed: {url} — {e}")
-        return None
+def _get(url, params=None, max_retries=2, timeout=30):
+    """
+    Fetch a URL with retry logic. Cloud server IPs (like Render's) are often
+    rate-limited or temporarily blocked by job sites — retrying with a short
+    delay sometimes succeeds where the first attempt times out or fails.
+    """
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            r = requests.get(url, headers=HEADERS, params=params, timeout=timeout)
+            r.raise_for_status()
+            return r
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                wait = random.uniform(2, 5) * (attempt + 1)  # increasing backoff
+                logger.info(f"Retry {attempt + 1}/{max_retries} for {url} after {wait:.1f}s — {e}")
+                time.sleep(wait)
+            continue
+    logger.warning(f"Request failed after {max_retries + 1} attempts: {url} — {last_error}")
+    return None
 
 def is_recent(date_str: str) -> bool:
     """
