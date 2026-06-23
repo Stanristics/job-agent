@@ -431,7 +431,7 @@ function JobsPage({ toast }) {
       <div className="page-header">
         <div>
           <div className="page-title">Job Applications</div>
-          <div className="page-subtitle">AI-matched jobs across Germany — last 24 hours only</div>
+          <div className="page-subtitle">AI-matched jobs from your selected countries — last 24 hours only</div>
         </div>
         <button className="btn btn-primary" onClick={triggerSearch} disabled={searching}>
           {searching
@@ -629,6 +629,49 @@ function SettingsPage({ toast }) {
               onChange={e=>setS({...s,min_score:e.target.value})}
               onBlur={()=>save('min_score',s.min_score||'60')}/>
           </div>
+        </div>
+
+        <div className="field" style={{marginTop:16}}>
+          <label>Countries to search</label>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:6}}>
+            {[
+              {key:'germany',     label:'🇩🇪 Germany'},
+              {key:'austria',     label:'🇦🇹 Austria'},
+              {key:'switzerland', label:'🇨🇭 Switzerland'},
+              {key:'norway',      label:'🇳🇴 Norway'},
+              {key:'australia',   label:'🇦🇺 Australia'},
+            ].map(c => {
+              const selected = (s.countries||'germany').split(',').map(x=>x.trim()).includes(c.key);
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  className="filter-btn"
+                  style={selected ? {background:'var(--green)22',color:'var(--green)',borderColor:'var(--green)55'} : {}}
+                  onClick={() => {
+                    const current = (s.countries||'germany').split(',').map(x=>x.trim()).filter(Boolean);
+                    let updated;
+                    if (current.includes(c.key)) {
+                      updated = current.filter(x => x !== c.key);
+                      if (updated.length === 0) updated = ['germany']; // always keep at least one
+                    } else {
+                      updated = [...current, c.key];
+                    }
+                    const value = updated.join(',');
+                    setS({...s, countries: value});
+                    save('countries', value);
+                  }}
+                >
+                  {selected && <i className="fa fa-check" style={{marginRight:4}}/>}
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+          <p style={{fontSize:11,color:'var(--muted)',marginTop:8,lineHeight:1.5}}>
+            <i className="fa fa-info-circle"/> StepStone & Xing only cover Germany, Austria, and Switzerland.
+            Indeed and LinkedIn search all 5 countries.
+          </p>
         </div>
       </div>
 
