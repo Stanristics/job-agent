@@ -124,11 +124,46 @@ def get_stats():
     rejected  = conn.execute("SELECT COUNT(*) FROM jobs WHERE status='rejected'").fetchone()[0]
     submitted = conn.execute("SELECT COUNT(*) FROM jobs WHERE status='submitted'").fetchone()[0]
     avg_score = conn.execute('SELECT AVG(match_score) FROM jobs').fetchone()[0]
+
+    # Application type breakdown — classify every job by its URL
+    all_urls = conn.execute('SELECT url FROM jobs').fetchall()
     conn.close()
+
+    type_counts = {
+        'linkedin_easy_apply': 0,  # confirmed Easy Apply only known at fill-time, so this counts all linkedin urls
+        'greenhouse': 0,
+        'workday': 0,
+        'lever': 0,
+        'email': 0,
+        'indeed_manual': 0,
+        'unknown_manual': 0,
+    }
+    for row in all_urls:
+        u = (row['url'] or '').lower()
+        if 'linkedin.com' in u:
+            type_counts['linkedin_easy_apply'] += 1
+        elif 'greenhouse.io' in u:
+            type_counts['greenhouse'] += 1
+        elif 'myworkdayjobs.com' in u or 'workday.com' in u:
+            type_counts['workday'] += 1
+        elif 'lever.co' in u:
+            type_counts['lever'] += 1
+        elif 'indeed.com' in u:
+            type_counts['indeed_manual'] += 1
+        elif u.startswith('mailto:') or '@' in u:
+            type_counts['email'] += 1
+        else:
+            # Default assumption: most non-platform URLs from StepStone/Xing
+            # link to a company email-based application or unknown custom form.
+            # We classify generically as "email" since that's the dashboard's
+            # default fallback type shown to the user.
+            type_counts['email'] += 1
+
     return {
         'total': total, 'pending': pending, 'approved': approved,
         'rejected': rejected, 'submitted': submitted,
-        'avg_score': round(avg_score or 0, 1)
+        'avg_score': round(avg_score or 0, 1),
+        'application_types': type_counts
     }
 
 # ── Search trigger ─────────────────────────────────────────────────────────────
